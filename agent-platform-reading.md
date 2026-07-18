@@ -680,17 +680,854 @@ State layers вместо каши.
 
 ---
 
-## 26. Карта чтения, если вернуться позже
+## 26. Growth-ready MVP boundary: Must / Should / Later
 
-- Хочешь понять продукт целиком → разделы 3–5, 25  
-- Хочешь UI → 7, 11  
-- Хочешь агента и MCP → 10, 12, 13  
-- Хочешь масштаб → 8, 19–21  
-- Хочешь качество → 16, 22–24  
+Это практическая граница: что должно быть в фундаменте **до** волны роста, что можно чуть позже, что сознательно later.
+
+### Must (без этого рост станет переписью)
+
+| Область | Must |
+|---------|------|
+| Identity | auth → trusted `userId`; никогда из body/model |
+| Threads | внешнее хранение, list/create/switch, ownership check |
+| Stream | parts-first UI; text + tool + error parts |
+| Tools | catalog + UI registry + fallback |
+| MCP content | read entity + create/update **draft**; verify/read-back |
+| Images | upload → object storage → reference в message |
+| Runs | `runId` в логах/traces; cancel хотя бы на клиентском stop |
+| Isolation | serialize sends per thread |
+| Truth | CMS = content truth; chat = conversation truth |
+| Docs | stream contract + tool catalog хотя бы в черновике |
+
+### Should (очень скоро, иначе операционный ад)
+
+| Область | Should |
+|---------|--------|
+| Publish | отдельный tool + approval |
+| Context contract | что видит модель на write-turn |
+| Idempotency | на все write MCP tools |
+| Budgets | maxSteps / cost cap / image limits |
+| Attachments policy | retention, MIME, size, signed URLs |
+| Evals | 10–20 golden cases на critical flows |
+| Preview panel | рядом с чатом, не только текст «готово» |
+| Typed errors | единая taxonomy UI ↔ agent ↔ MCP |
+| Trace correlation | UI request → run → tool calls |
+
+### Later (когда появится боль, не раньше)
+
+- BullMQ на тяжёлые pipelines  
+- multi-agent / handoffs  
+- AG-UI / A2UI как протоколы  
+- resource-wide observational memory everywhere  
+- shared rooms / multi-user threads  
+- full resumable streams с Redis buffer  
+- сложный generative UI constructor  
+- online evals на 100% трафика  
+
+### Правило границы
+
+Если фича требует сломать Must — она не «feature», а **platform change**.  
+Отдельный ADR, отдельный eval pack, отдельное окно миграции.
 
 ---
 
-## 27. Закрытие
+## 27. Entity / CMS domain model
+
+Пока entity не названа, MCP — это «магические руки».  
+Назовите мир сайта.
+
+### Базовые объекты контента
+
+| Объект | Пример | Зачем |
+|--------|--------|-------|
+| **EntityType** | `page`, `post`, `block`, `product` | разные схемы и tools |
+| **EntityId** | стабильный id в CMS | на что ссылается чат и preview |
+| **Revision** | draft / published / archived | draft≠publish материально |
+| **Locale** | `ru`, `en` | не смешивать языки в одном write без intent |
+| **Slug / Path** | URL на сайте | verify и deep link из чата |
+| **Field/Block** | title, hero, body sections | granular updates вместо rewrite all |
+| **Asset** | image/file в медиатеке | отделён от attachment в чате |
+
+### Связь с чатом
+
+В thread metadata / working memory полезно держать:
+
+```
+currentEntity: { type, id, locale, revisionId? }
+lastProposedRevision?
+lastAppliedRevision?
+```
+
+Чат не хранит HTML страницы целиком как source of truth.  
+Чат хранит **указатели** и разговор о них.
+
+### Команды к миру (через MCP)
+
+Минимальный набор глаголов:
+
+- `getEntity`  
+- `listEntities` (осторожно с объёмом)  
+- `createDraft`  
+- `updateDraft`  
+- `getRevisionDiff`  
+- `publishRevision`  
+- `attachAsset`  
+- `validateEntity` (quality gates)
+
+Лучше узкие глаголы, чем один `doEverythingWithSite`.
+
+### Preview sync
+
+Preview читает **CMS/draft revision**, не invent из последнего assistant message.  
+После apply → invalidate preview.  
+Если apply failed → preview не врёт, что «уже на сайте».
+
+### Конфликты
+
+Когда пользователь (или другой процесс) изменил entity между read и write:
+
+- optimistic locking / revision token;  
+- MCP возвращает `conflict`;  
+- UI показывает «сущность изменилась, перечитай»;  
+- агент не затирает молча.
+
+Это must для растущего продукта, даже если сначала редкость.
+
+---
+
+## 28. Content-agent UX patterns
+
+Кастомные primitives имеют смысл, только если UX отражает content loop, а не generic chat.
+
+### Рекомендуемый layout
+
+```
+┌──────────────┬────────────────────┬────────────────────┐
+│ Thread list  │ Chat (primitives)  │ Preview / Entity   │
+│              │ + tool cards       │ + diff / status    │
+└──────────────┴────────────────────┴────────────────────┘
+```
+
+На мобиле: chat основной, preview — sheet/drawer по статусу apply/publish.
+
+### Обязательные UX-состояния контент-run
+
+1. **Idle** — можно писать  
+2. **Grounding** — читает entity («смотрю текущую страницу»)  
+3. **Proposing** — стримит план/draft  
+4. **Awaiting approval** — карточка publish/update  
+5. **Applying** — MCP write in progress  
+6. **Verifying** — read-back  
+7. **Succeeded** — ссылка на entity + что изменилось  
+8. **Failed** — typed error + retry/safe next step  
+9. **Cancelled**
+
+### Diff как first-class
+
+Не «я всё обновил», а:
+
+- какие fields/blocks changed;  
+- before/after или summary diff;  
+- link open preview;  
+- явно draft vs published.
+
+### Tool cards, которые стоит иметь
+
+- `EntityCard` — type/id/title/status  
+- `DiffCard` — изменения  
+- `ApprovalCard` — publish/destructive  
+- `AssetCard` — uploaded/attached image  
+- `ValidationCard` — SEO/a11y/brand issues  
+- `ErrorCard` — taxonomy + trace id  
+
+### Composer rules для content UX
+
+- while applying/publishing → block conflicting sends  
+- allow cancel when safe  
+- if awaiting approval → primary actions Approve/Reject, не «просто ещё текст»  
+- after success → suggested follow-ups: «улучшить hero», «добавить FAQ», «опубликовать»
+
+### Пустые и краёвые экраны
+
+- нет current entity → предложить выбрать/создать  
+- нет permission → честно сказать  
+- preview unavailable → не блокировать чат полностью  
+- unknown tool → fallback card, не пустота  
+
+---
+
+## 29. Edit / regenerate / branch при side effects
+
+Обычный chatbot предполагает: regenerate = просто другой текст.  
+У вас regenerate может означать **ещё один write в CMS**. Это другая физика.
+
+### Операции UI и их опасность
+
+| UI action | Безопасно, если | Опасно, если |
+|-----------|-----------------|--------------|
+| Edit user message + resend | только propose, без auto-write | автоматически повторит MCP writes |
+| Regenerate assistant | пересоберёт текст proposal | заново createDraft/publish |
+| Branch / fork thread | новый thread от snapshot | непонятно, какая revision «главная» |
+| Retry tool | idempotent write | создаст дубли entity |
+| Undo | есть reverse/compensate | publish уже ушёл в prod |
+
+### Политика по умолчанию
+
+1. **Regenerate** перегенерирует proposal/diff, не publish.  
+2. Повторный apply — только явный intent пользователя или явная approval.  
+3. Retry write использует тот же idempotency key / same revision target.  
+4. Edit earlier user message после apply → предупреждение: «в CMS уже есть изменения».  
+5. Branching conversation не ветвит CMS автоматически; CMS остаётся linear revisions.
+
+### Модель «proposal vs committed»
+
+В run/result различайте:
+
+- `proposedRevision` — ещё не применено / или применено только в draft;  
+- `committedRevision` — записано;  
+- `publishedRevision` — живо на сайте.
+
+UI и агент говорят этими словами.  
+Тогда regenerate не путает людей и систему.
+
+### Практическое правило
+
+Любая кнопка, которая переигрывает историю сообщений, должна отвечать на вопрос:
+
+**«Будут ли side effects?»**  
+Если да — нужен confirm и idempotency strategy.  
+Если нет — можно быть лёгкой.
+
+---
+
+## 30. Security для пишущего агента
+
+Пишущий агент — это привилегированный пользователь с LLM в контуре. Угрозы другие.
+
+### Главные угрозы
+
+1. **Prompt injection** через содержимое страницы, комментарии, OCR/картинки, tool results.  
+2. **Confused deputy** — агент с широким service account обходит user RBAC.  
+3. **Data exfiltration** — «прочитай всё и вставь в публичный пост».  
+4. **Destructive overwrite** — затёрли prod.  
+5. **Attachment attacks** — SVG/HTML/polyglot files.  
+6. **Tool poisoning** — плохие descriptions/schemas у MCP tools.
+
+### Базовые контроли
+
+- least privilege MCP credentials per user/tenant;  
+- authz внутри каждого write tool;  
+- draft default, publish через approval;  
+- allowlist entity types/paths, которые агент может трогать;  
+- sanitize/quarantine untrusted content before it becomes «instructions»;  
+- treat tool output as data, не как system voice;  
+- schema validate MCP args и results;  
+- cap response sizes from tools;  
+- никогда не класть secrets в context;  
+- audit: who/when/tool/entity/before-after hash.
+
+### Injection-aware content loop
+
+Когда агент читает entity:
+
+1. помечать retrieved content как untrusted;  
+2. не выполнять найденные в контенте «инструкции»;  
+3. policy: менять можно только в рамках user intent текущего run;  
+4. publish gate может включать safety checks.
+
+### Images
+
+- MIME sniff server-side;  
+- no scriptable formats in public path без политики;  
+- если image = reference, не публиковать автоматически;  
+- если image = asset, отдельный upload tool с правами.
+
+### Threat model one-pager (стоит иметь)
+
+Короткий doc:
+
+- assets to protect (prod content, credentials, PII);  
+- actors (user, attacker via content, malicious file);  
+- controls;  
+- residual risks.
+
+---
+
+## 31. Cost & model routing
+
+Рост usage убивает продукт тише, чем баги.
+
+### Разные работы — разные модели
+
+| Работа | Модель |
+|--------|--------|
+| classify intent / route | дешёвая быстрая |
+| extract structured brief | средняя |
+| long-form write | сильная |
+| vision по референсу | vision-capable, точечно |
+| judge/eval | отдельная, не всегда top-tier |
+| summarize memory | дешёвая |
+
+Не гоняйте frontier model на каждый «да/нет» и каждый tool router.
+
+### Бюджеты
+
+- per run: max steps, max tool calls, max writes, max tokens, max images;  
+- per user/day: soft/hard caps;  
+- per tenant: noisy-neighbor protection;  
+- per tool: timeout + rate limit.
+
+UI должен уметь сказать: «остановлено по лимиту», не просто «ошибка».
+
+### Context cost
+
+Дороже всего часто не output, а:
+
+- огромные tool results;  
+- повторная отправка images;  
+- раздутый tool catalog;  
+- сырой HTML entity в каждом turn.
+
+Лечится context contract’ом и compression policy.
+
+### Product levers
+
+- для cheap users — сильнее лимиты / меньше auto-tools;  
+- для pro — выше priority и бюджет;  
+- cache стабильного system+tools prefix;  
+- не ретраить дорогие writes автоматически без ключа и лимита attempts.
+
+---
+
+## 32. Quality gates before publish
+
+Publish — не кнопка, а ворота.
+
+### Типы gates
+
+| Gate | Примеры |
+|------|---------|
+| Structural | required fields, locale, slug unique |
+| Editorial | tone, banned claims, placeholder text left |
+| SEO | title length, meta, headings |
+| A11y | alt у images, heading order |
+| Safety | policy/PII/secrets leaked into content |
+| Brand | voice, forbidden phrases |
+| Link health | broken internal links (по возможности) |
+
+### Как встроить
+
+Лучше как tools/checks:
+
+- `validateEntity(revisionId)` → structured issues;  
+- агент чинит или просит пользователя;  
+- `publishRevision` отказывается при hard-fail;  
+- soft-fail можно override с approval и reason.
+
+### UX
+
+ValidationCard:
+
+- errors vs warnings;  
+- «fix automatically» vs «publish anyway»;  
+- не сыпать 50 замечаний без группировки.
+
+### Правило
+
+Чем легче создать контент, тем жёстче publish gate.  
+Иначе AI ускоряет производство мусора.
+
+---
+
+## 33. Incident & rollback playbook
+
+Если агент пишет на сайт, инциденты будут. Готовьтесь текстом, не импровизацией.
+
+### Классы инцидентов
+
+1. Wrong draft content  
+2. Wrong publish to prod  
+3. Duplicate entities  
+4. Partial write / corrupted revision  
+5. Permission bug (user увидел чужое)  
+6. Cost runaway loop  
+7. MCP/CMS outage mid-apply  
+
+### Для каждого класса заранее
+
+- как детектить (alert / user report / audit);  
+- blast radius;  
+- immediate mitigation (unpublish / revert revision / disable tool / kill switch);  
+- user messaging;  
+- forensics (runId, tool args, revision ids);  
+- follow-up eval case.
+
+### Kill switches
+
+Иметь тумблеры:
+
+- disable publish globally;  
+- disable writes for tenant;  
+- disable specific MCP tool;  
+- force read-only mode for agent;  
+- reduce maxSteps globally.
+
+Лучше тупой kill switch, чем изящный труп.
+
+### Rollback model
+
+Идеально: CMS revisions позволяют revert.  
+Тогда agent publish = создать revision, rollback = publish previous.  
+Если CMS без revisions — сначала ограничить агента draft-only, пока это не появится.
+
+### Postmortem минимум
+
+- timeline;  
+- which invariant failed;  
+- which catalog/contract gap;  
+- new eval + new gate;  
+- owner.
+
+---
+
+## 34. Human editor handoff
+
+Не shared chat на много людей, а **передача работы человеку**.
+
+### Когда нужно
+
+- approval слишком сложный;  
+- юридический/брендовый review;  
+- агент не уверен;  
+- publish высокого риска;  
+- пользователь просит «отдай редактору».
+
+### Модель
+
+Агент создаёт пакет передачи:
+
+- entity + revision;  
+- summary of changes;  
+- open questions;  
+- risk level;  
+- links to preview/diff;  
+- conversation pointers (threadId/runId), не обязательно весь dump.
+
+Человек работает в CMS/admin.  
+Статус возвращается в thread: `approved | rejected | edited_manually`.
+
+### UX
+
+- статус «на ревью»;  
+- кто assignee (если есть);  
+- агент в это время не публикует сам;  
+- после возврата — verify факта в CMS, не верь словам.
+
+Это дешевле и реалистичнее, чем строить multi-user collaborative agent thread.
+
+---
+
+## 35. Testing strategy: не только «пощупать глазами»
+
+### Пирамида для агентного продукта
+
+1. **Contract tests** — schemas tools/parts, fixture streams.  
+2. **MCP mocks** — fake CMS с revision/conflict/errors.  
+3. **Agent evals** — golden trajectories (offline).  
+4. **UI part tests** — renderers для tool states/fallback.  
+5. **Smoke e2e** — один critical path на staging.  
+6. **Online monitors** — sample prod traces.
+
+### Что мокать обязательно
+
+- createDraft success/fail/conflict  
+- publish approval required  
+- validateEntity hard/soft fail  
+- timeout/dependency down  
+- image upload fail  
+
+### Golden scenarios (минимум)
+
+1. Создать draft страницы из брифа  
+2. Обновить существующую entity  
+3. Референс-image → proposal без publish  
+4. Publish с approval accept/reject  
+5. Conflict на update  
+6. Unauthorized entity  
+7. Cancel mid-run  
+8. Unknown tool fallback  
+9. Regenerate после draft apply (не должен плодить дубли)  
+10. Validation blocks publish  
+
+### Правило CI
+
+PR меняет prompt/tool/schema/renderer → гоняет relevant suite.  
+Не «все evals мира», а затронутый контур + критичный smoke.
+
+---
+
+## 36. Retention, удаление, частные данные
+
+Рост = накопление мусора и рисков.
+
+### Что хранится
+
+- threads/messages  
+- attachments  
+- traces/logs  
+- drafts/revisions в CMS  
+- memory summaries  
+
+У каждого — своя политика TTL и delete path.
+
+### Практичные defaults
+
+| Данные | Идея |
+|--------|------|
+| Attachments | TTL или delete with thread |
+| Raw traces | короче, чем business records |
+| Drafts | по политике продукта |
+| Published content | lifecycle CMS, не чата |
+| Memory | expire/summarize, не infinite raw |
+
+### User deletion
+
+«Удалить аккаунт/данные» должно понимать:
+
+- удалить threads + attachments;  
+- решить, что с generated content на сайте (оставить/анонимизировать/удалить — продуктовый выбор);  
+- подчистить memory ids;  
+- сохранить то, что нельзя стереть по закону (с минимизацией).
+
+### Правило
+
+Chat delete ≠ automatic site unpublish, пока это не явное продуктовое поведение.
+
+---
+
+## 37. Upgrade playbook: ai / mastra / assistant-ui
+
+Самый хрупкий контур — версии моста.
+
+### Принципы
+
+- обновлять связкой, не по одному пакету в пятницу вечером;  
+- читать changelog AI SDK parts/stream первым;  
+- иметь smoke matrix до/после;  
+- pin в lockfile осознанно;  
+- staging с реальными tool cards и одним MCP write path.
+
+### Smoke matrix
+
+1. text stream  
+2. tool call + result render  
+3. image upload + send  
+4. draft apply + preview refresh  
+5. approval flow  
+6. cancel  
+7. reload thread history  
+8. unknown tool fallback  
+9. error part  
+10. multi-thread switch mid-work  
+
+### Если сломалось
+
+Сначала предполагайте **протокол/адаптер**, не «React баг».  
+Откат версии моста часто дешевле локальных хаков в UI.
+
+### Календарь
+
+Раз в регулярный интервал — window обновлений.  
+Не обновлять runtime mid-feature-freeze без причины.
+
+---
+
+## 38. Product analytics: что считать успехом
+
+Технические метрики нужны. Но продукт измеряется иначе.
+
+### North-star кандидаты
+
+- % сессий, где создан/обновлён draft  
+- % drafts, дошедших до publish  
+- time-to-first-useful-draft  
+- publish success rate after approval  
+- revert/unpublish rate (качество)  
+- user retry rate (трение)  
+- approval reject rate (калибровка осторожности)
+
+### Health metrics
+
+- tool error rate by tool  
+- fallback hits (catalog drift)  
+- cost per successful publish  
+- abandoned runs  
+- attachment fail rate  
+- conflict rate on writes  
+
+### Qualitative loop
+
+Раз в неделю смотреть 20 traces:
+
+- где человек злится;  
+- где агент лишний раз пишет;  
+- где preview врёт;  
+- где approval бессмысленный или наоборот нужен.
+
+Каждый finding → eval или UX fix.
+
+---
+
+## 39. Когда покидать стек (exit criteria)
+
+Дисциплина включает знание, когда *не* фанатеть.
+
+### Оставайтесь на Mastra + Assistant UI primitives, пока
+
+- хватает AI SDK bridge;  
+- custom UI закрывается parts/tool registry;  
+- один/несколько agents + MCP ок;  
+- команда успевает держать catalogs.
+
+### Пересматривайте шов, если
+
+| Боль | Куда смотреть |
+|------|----------------|
+| Нужен глубокий shared app state agent↔UI | AG-UI state / CopilotKit-like patterns |
+| Сильный multi-agent graph с durable checkpoints | более graph-native orchestration |
+| UI целиком generative surfaces | A2UI-like catalog protocol |
+| Bridge ломается каждый upgrade | thinner anti-corruption layer / freeze versions |
+| Chat runtime мешает продукту | ExternalStore и свой state жёстче |
+
+### Правило выхода
+
+Меняют **один шов**, не всё сразу.  
+Сначала protocol/state, потом UI, потом orchestration — по фактической боли.
+
+---
+
+## 40. RFC-шаблоны
+
+Ниже — заготовки. Копируйте в repo как `docs/rfc/`.
+
+### A. Tool Catalog Card
+
+```text
+Name:
+Version:
+Description (for model):
+When to use / when not:
+Input schema:
+Output schema:
+Side effect class: read | write | destructive | external
+Idempotent: yes/no
+Idempotency key strategy:
+Approval: auto | always | conditional(rules)
+Timeout:
+Retry:
+Compensate:
+Authz requirements:
+Entity types affected:
+UI renderer:
+Fallback:
+Errors:
+Eval cases:
+Owner:
+Status: draft | active | deprecated
+```
+
+### B. Stream/Part Contract note
+
+```text
+Part type:
+Version:
+Direction: client→server | server→client | both
+Payload schema:
+Required UI states:
+Unknown-part fallback:
+Breaking change policy:
+Examples:
+```
+
+### C. Context Contract slot
+
+```text
+Slot name:
+Purpose:
+Source:
+Trust level: trusted | user | untrusted_retrieved
+Budget tokens:
+Inclusion rules:
+Exclusion rules:
+Compression strategy:
+Cacheability:
+Owner:
+```
+
+### D. Entity Action
+
+```text
+Action: createDraft | updateDraft | publish | ...
+EntityType:
+Preconditions:
+Conflict strategy:
+Verify method:
+Approval required:
+Analytics event:
+Incident class if fails:
+```
+
+### E. Eval case
+
+```text
+ID:
+Intent:
+Setup (entity/fixtures):
+User input:
+Attachments?:
+Expected tools (optional):
+Forbidden tools/actions:
+Expected end state (CMS + UI):
+Grader: deterministic | llm-judge | human
+Severity if fails: block | warn
+```
+
+---
+
+## 41. Failure UX catalog
+
+Сделайте библиотеку состояний — иначе каждый экран импровизирует.
+
+| Failure | User-facing | System behavior |
+|---------|-------------|-----------------|
+| validation | что исправить | no retry loop |
+| authz | нет доступа | no leak existence if needed |
+| not_found | entity missing | offer create/select |
+| conflict | кто-то изменил | re-ground |
+| rate_limited | подождите | backoff |
+| dependency_down | сайт/MCP недоступен | read-only degrade |
+| budget_exceeded | лимит | stop run |
+| safety_blocked | нельзя | escalate/handoff |
+| upload_failed | повторить файл | keep composer text |
+| unknown_tool | частичный результат | fallback card + trace |
+| cancelled | остановлено | persist partial safely |
+
+Каждый тип — один ErrorCard pattern + один agent-facing error code.
+
+---
+
+## 42. Degraded modes
+
+Нормальные системы умеют работать «хуже», а не только «никак».
+
+| Mode | Когда | Поведение |
+|------|-------|-----------|
+| read-only agent | CMS write outage | только анализ/proposal |
+| text-only | vision provider down | просить описание картинки словами |
+| no-publish | risk event | drafts only |
+| limited-tools | overload | subset tools |
+| cheap-model | budget pressure | simpler responses, fewer steps |
+| human-only publish | safety | agent готовит, человек публикует |
+
+UI явно показывает mode badge.  
+Скрытая деградация хуже честной.
+
+---
+
+## 43. Team rituals at scale
+
+Когда вырастете хотя бы до нескольких людей:
+
+### Weekly
+
+- 20–50 trace review  
+- catalog drift check (tool without UI / UI without tool)  
+- cost anomalies  
+
+### Per PR
+
+- contract touched?  
+- evals updated?  
+- smoke relevant?  
+
+### Monthly
+
+- dependency upgrade window  
+- threat model skim  
+- retention policy check  
+- kill switch drill (хотя бы tabletop)  
+
+### Ownership
+
+- Agent owner  
+- UI owner  
+- Contract owner  
+- Eval/ops owner  
+
+Можно совмещать роли, нельзя оставлять «ничейным» publish path.
+
+---
+
+## 44. Roadmap narrative (как рассказывать рост)
+
+Вместо хаотичного backlog — сюжет:
+
+1. **Stabilize conversation platform** (threads, parts, images, ownership)  
+2. **Make writes safe** (draft/verify/idempotency/approvals)  
+3. **Make UX product-native** (preview, diff, content states)  
+4. **Make quality measurable** (gates, evals, analytics)  
+5. **Make ops boring** (incidents, kill switches, upgrades)  
+6. **Then expand surface** (больше entity types/tools/locales)
+
+Каждая новая контент-фича проверяется: «на каком акте этого сюжета мы?»  
+Если ещё не закончили акт 2, не открывайте акт 6.
+
+---
+
+## 45. Сквозной сценарий «идеального» run
+
+Соберите в голове один эталон — и сверяйте с ним дизайн.
+
+1. User открывает thread, выбирает/создаёт entity context.  
+2. Прикладывает референс-image + текст брифа.  
+3. Agent grounding: `getEntity` + vision reference (не publish asset).  
+4. Proposal + DiffCard + Preview draft plan.  
+5. User уточняет.  
+6. Agent `updateDraft` / `createDraft` с idempotency.  
+7. `validateEntity` → warnings fixed.  
+8. User просит publish → ApprovalCard.  
+9. `publishRevision` → verify → Preview shows published.  
+10. Trace хранит весь путь; analytics отмечает success; eval покрывает сценарий.
+
+Если ваш текущий путь сильно короче — ок для H1.  
+Но эталон показывает, куда сходятся швы.
+
+---
+
+## 46. Карта чтения (обновлённая)
+
+### Быстрые маршруты
+
+- Понять продукт целиком → 3–5, 25, 45  
+- Figma/UI голова → 7, 11, 28, 41  
+- Backend/agent → 10, 12, 13, 27, 30  
+- Рост и приоритеты → 19–21, 26, 44  
+- Операционка → 33, 37, 42, 43  
+- Качество → 16, 32, 35, 38  
+- Шаблоны в работу → 40  
+
+### Если читать в самолёте блоками по 20–30 минут
+
+1. 1–7 (фундамент и UI)  
+2. 8–12 (users, MCP, images, context)  
+3. 13–18 (reliability, memory, standards)  
+4. 19–26 (рост и MVP boundary)  
+5. 27–33 (CMS, UX, security, incidents)  
+6. 34–45 (handoff, tests, ops, templates, эталон)
+
+---
+
+## 47. Закрытие
 
 Ваша ставка разумная: не прыгать на новый framework каждый месяц, а растить **Mastra + Assistant UI primitives** как тонкую платформу с богатой продуктной поверхностью.
 
@@ -707,8 +1544,18 @@ Tools станет больше.
 - каталоги синхронны;  
 - run наблюдаем;  
 - draft не путают с publish;  
-- неизвестное деградирует честно, а не молча ломается.
+- entity в CMS — правда контента;  
+- неизвестное деградирует честно;  
+- инциденты заранее имеют ручки;  
+- рост идёт через Must/Should/Later, а не через хаос.
 
-Если после посадки захочется продолжить — следующий полезный артефакт не «ещё библиотека», а один page **Growth-ready MVP boundary**: Must / Should / Later под ваш реальный продукт.
+Север короткий:
+
+**События вместо голого текста.  
+Catalog вместо произвольного UI.  
+Pause/resume вместо нового turn.  
+Evals вместо ощущений.  
+Entity truth вместо каши в messages.  
+Стабильные швы вместо героизма.**
 
 Хорошего полёта.
