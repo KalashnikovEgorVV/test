@@ -60,7 +60,11 @@ Primitives — правильный компромисс для продукта
 
 ## 3. Это Assistant / Agent OS, а не «чат-виджет»
 
-В разговоре это звучало как: вы строите не фичу чата, а **OS-слой для агента**.
+Вы строите не фичу чата.  
+Вы собираете **OS-слой для агента** внутри продукта.
+
+В индустрии это называют по-разному: agentic OS, agent platform, harness-as-OS, AIOS-kernel.  
+Суть одна: между «моделью» и «реальным миром» нужен coordination layer — иначе получается демо.
 
 ### Чем OS отличается от чатбота
 
@@ -68,70 +72,391 @@ Primitives — правильный компромисс для продукта
 |--------|----------------------|
 | Отвечает текстом | Управляет работой end-to-end |
 | История = всё состояние | Разговор / run / entity разделены |
-| Tools как плагины «на потом» | Tools/MCP — руки в мир |
-| UI = пузырьки | UI = пульт: preview, diff, approval, status |
+| Tools как плагины «на потом» | Tools/MCP — syscalls в мир |
+| UI = пузырьки | UI = cockpit: preview, diff, approval, status |
 | Упал — «попробуй ещё» | Cancel, budgets, audit, rollback |
 | Растёт промптами | Растёт контрактами и каталогами |
+| Безопасность «в промпте» | Политика на границе действия |
 
-### Почему слово OS уместно
+### Два оттенка одного слова
 
-Операционная система в классике даёт процессам:
+- **Assistant OS** — человек в центре: чат, approvals, handoff, понятный пульт.  
+- **Agent OS** — исполнение: runs, tools, memory, isolation, governance.  
 
-- identity и права;  
-- память;  
-- I/O (у вас MCP/CMS);  
-- планировщик/оркестрацию;  
-- изоляцию;  
-- наблюдаемость.
+Вам нужны оба. Практичный ярлык продукта:
 
-Agentic OS делает то же для LLM-агентов.  
-**Assistant OS** — акцент на человеке в контуре (chat, approvals, handoff).  
-**Agent OS** — акцент на исполнении работы.  
-Вам нужны оба оттенка: человек ведёт, агент делает, сайт меняется.
+**Agentic Content OS** — OS-слой, где ассистент создаёт и меняет контент сайта.
 
-### Ваше имя для этого
-
-Практичный ярлык:
-
-**Agentic Content OS** — OS-слой, в котором ассистент создаёт и меняет контент сайта.
-
-Не путать с:
-
-- desktop OS;  
-- «ещё одной agent framework»;  
-- универсальным multi-agent runtime на все случаи жизни.
-
-Это тонкий coordination layer внутри вашего продукта.
-
-### Из чего собирается ваш OS-слой
-
-```
-Interface OS     → Assistant UI primitives
-Nerve            → AI SDK stream
-Brain            → Mastra
-Hands            → MCP
-World            → CMS / site
-Law              → auth, approvals, budgets, audit
-Feedback         → traces, evals, analytics
-```
-
-Пока эти части названы и не слипаются — у вас OS.  
-Как только бизнес-логика утекает в React, а CMS truth в messages — снова просто чат.
-
-### Следствие для роста
-
-Растить надо как OS:
-
-- новые syscalls = новые MCP tools в catalog;  
-- новые surface apps = новые UX flows на primitives;  
-- новые drivers = новые entity types;  
-- не переписывать kernel каждый раз, когда нужен новый вид поста.
-
-Дальше «семь контуров» — это как раз подсистемы этой OS.
+Это не desktop OS и не «ещё один framework».  
+Это тонкий coordination layer, который вы собираете из Mastra + Assistant UI + MCP + CMS.
 
 ---
 
-## 4. Семь контуров системы
+## 4. Карта OS: kernel, cockpit, world
+
+Полезнее думать не «у нас Linux для агентов», а так:
+
+```
+┌────────────────────────────────────────────┐
+│ COCKPIT (Assistant UI primitives)          │
+│ chat · preview · diff · approvals · status │
+├────────────────────────────────────────────┤
+│ SUPERVISOR / KERNEL-ISH LAYER              │
+│ identity · scheduler-ish · memory · tools  │
+│ policy · budgets · audit · stream bridge   │
+├────────────────────────────────────────────┤
+│ WORLD                                      │
+│ CMS / site · object storage · LLM APIs     │
+└────────────────────────────────────────────┘
+```
+
+### Cockpit
+То, что видит человек.  
+У вас — Assistant UI primitives + preview/entity panel.  
+Если cockpit умеет только пузырьки — это ещё не OS для content.
+
+### Supervisor / kernel-ish
+Не буквальное ядро Linux. Ближе к **process supervisor + policy middleware**:
+
+- кто запросил;  
+- какой run стартовал;  
+- какие tools можно вызвать;  
+- сколько шагов/денег осталось;  
+- нужен ли approval;  
+- что записать в audit.
+
+У вас это склейка: auth + Mastra + `@mastra/ai-sdk` + policy на MCP tools.
+
+### World
+CMS, файлы, модели.  
+Агент не «живёт» в CMS — он ходит туда через syscalls (MCP).
+
+### Почему скептики правы — и всё равно метафора полезна
+
+Метафора ломается, если обещать «настоящий kernel с планировщиком как у Linux».  
+Метафора работает, если использовать её как **чеклист обязанностей**:
+
+есть ли identity? память? I/O стандарт? изоляция? governance? audit? cockpit?
+
+Если да — вы строите OS-слой.  
+Если нет — у вас обёртка над `chat.completions`.
+
+---
+
+## 5. Модули OS и ваш стек
+
+Классический agent-OS словарь (AIOS и наследники) хорошо мапится на вас:
+
+| OS-модуль | Вопрос | У вас |
+|-----------|--------|-------|
+| Access / Identity | кто действует? | auth → userId/tenant |
+| Scheduler | что исполняется сейчас? | run lifecycle; per-thread serialize |
+| Context manager | что в окне модели? | context contract |
+| Memory manager | что помним между turns? | Mastra resource/thread memory |
+| Storage manager | где бинарное и долгие артефакты? | attachments store, CMS revisions |
+| Tool manager | как вызываем мир? | MCP catalog + idempotency + UI registry |
+| Stream/IPC | как cockpit слышит kernel? | AI SDK UI message stream |
+| Governance | что нельзя без спроса? | approvals, budgets, validate/publish gates |
+| Telemetry | как понять, что случилось? | traces, evals, analytics |
+
+Правило сборки OS: **модуль можно заменить, контракт модуля — нет**.  
+Можно сменить CMS. Нельзя позволить каждому tool изобретать свой auth и свой audit.
+
+---
+
+## 6. Process model: Run как процесс
+
+В обычной OS единица исполнения — process/thread.  
+В Agent OS единица исполнения — **run**.
+
+```
+User
+ └─ Thread (session/conversation)
+     └─ Run (process)
+         ├─ model steps
+         ├─ tool/MCP syscalls
+         ├─ approvals (signals)
+         └─ terminal status
+```
+
+### Что даёт process-мышление
+
+- cancel = kill/signal, а не «закрыть вкладку и забыть»;  
+- budgets = quotas на процесс;  
+- audit = process accounting;  
+- idempotency keys привязаны к run/step;  
+- UI показывает process state, не только текст.
+
+### Состояния процесса (run)
+
+`created → running → waiting_approval → running → succeeding/failing → terminal`  
+плюс `cancelled`, `budget_exceeded`, `degraded`.
+
+Cockpit обязан уметь эти состояния показать.  
+Иначе OS есть «внутри», но для человека снова магический чат.
+
+### Изоляция
+
+- разные users — разные address spaces (tenancy);  
+- разные threads — параллельные процессы ок;  
+- один thread — не два writer-run’а сразу (lock), как файл, открытый на запись.
+
+---
+
+## 7. Syscalls: MCP tools как системные вызовы
+
+LLM не должен «просто дергать CMS».  
+Он делает **syscall** в OS-слой, а OS решает, исполнять ли.
+
+### Аналогия
+
+| OS | У вас |
+|----|-------|
+| `open/read/write` | `getEntity` / `updateDraft` |
+| `ioctl` спец. операции | `publishRevision`, `validateEntity` |
+| driver | MCP server + CMS adapter |
+| syscall table | Tool Catalog |
+| errno | typed error taxonomy |
+| strace | tool trace в run |
+
+### Свойства нормального syscall
+
+1. стабильное имя и schema;  
+2. проверка прав;  
+3. валидация аргументов;  
+4. side-effect class;  
+5. idempotency для writes;  
+6. timeout;  
+7. структурированный результат/ошибка;  
+8. audit record;  
+9. UI-проекция (tool card).
+
+Если tool = «функция в промпте без этого» — это не syscall, а дырка в ядре.
+
+### Dual catalog = syscall table + man pages для UI
+
+- backend catalog — что можно вызвать;  
+- UI registry — как человек это видит;  
+- рассинхрон = неизвестный syscall → fallback, не silent fail.
+
+### Новые возможности = новые syscalls, не новый kernel
+
+Хотите поддерживать товары, лендинги, локали — добавляете entity types + tools.  
+Не переписываете chat runtime.
+
+---
+
+## 8. Память OS: RAM, disk, page faults
+
+Самая сильная часть OS-метафоры для агентов — память.
+
+| OS | Agent OS | У вас |
+|----|----------|-------|
+| RAM | context window | то, что собрали в turn |
+| Disk | long-term memory / CMS / files | Mastra memory, entity revisions, attachments |
+| Page in | retrieval / recall / getEntity / analyze image | select в context contract |
+| Page out | summarize / drop raw / keep reference | compression policy |
+| Pinning | always-on policy/tools/system | stable prefix для cache |
+| Memory leak | тащить весь сайт и все images каждый turn | cost + quality death |
+
+### Практические следствия
+
+- не хранить binary в «RAM-истории» навсегда — только references;  
+- после vision — description + fileId на disk, original не в каждом prompt;  
+- entity HTML не обязан быть всегда в окне — `getEntity` = page fault;  
+- working memory = маленькие pinned facts о user/entity;  
+- observational/summary = compaction, когда thread вырос.
+
+Context engineering в этой рамке — не «красивый промпт», а **memory manager OS**.
+
+---
+
+## 9. Права и кольца защиты
+
+Промпт «пожалуйста, не публикуй без спроса» — не security.  
+В OS права проверяет ядро.
+
+### Кольца (упрощённо)
+
+| Ring | Кто | Можно |
+|------|-----|-------|
+| 0 Policy | authz/approval/budget code | разрешить/запретить syscall |
+| 1 Supervisor | Mastra orchestration | планировать steps, звать tools |
+| 2 Tools | MCP adapters | менять мир в рамках grant |
+| 3 Model | LLM | предлагать actions, не исполнять напрямую |
+| User | человек | intent, approval, handoff |
+
+Модель всегда выше/снаружи опасных операций: она *просит*, OS *исполняет*.
+
+### Grant на действие
+
+На publish/write полезен envelope:
+
+```
+principal + tenant
+action
+entity
+revision
+risk level
+approval state
+budget remaining
+```
+
+Нет envelope — нет write.
+
+### Почему это критично для Content OS
+
+Агент с широким CMS token = root.  
+Root-агент в проде без publish gate — инцидент, который только ждёт prompt injection из содержимого страницы.
+
+---
+
+## 10. Scheduler, fairness, noisy neighbor
+
+Даже без BullMQ у OS есть планирование:
+
+- кто сейчас занимает model/tool capacity;  
+- не дать одному user съесть всех;  
+- не запустить второй write-run в тот же thread;  
+- остановить no-progress loops.
+
+### Минимальный scheduler для вас
+
+1. per-thread mutex на active run;  
+2. per-user concurrency cap;  
+3. per-run maxSteps/cost;  
+4. global soft limit на LLM/MCP;  
+5. явные статусы queue/wait только если реально нужна очередь.
+
+Очередь jobs — опция для фона.  
+Scheduler-дисциплина — must для интерактива.
+
+---
+
+## 11. Cockpit: Assistant UI как панель оператора
+
+В зрелых agent OS спорят не только про kernel, но про **cockpit**.  
+Без кабины оператора OS бесполезна людям.
+
+### Что cockpit обязан уметь в Content OS
+
+- видеть process/run state;  
+- видеть syscalls (tool cards);  
+- approve/reject опасные;  
+- открыть world state (preview/entity);  
+- понять diff before/after;  
+- остановить run;  
+- найти trace id, когда «сломалось».
+
+### Почему primitives здесь идеальны
+
+Готовый generic Thread оптимизирован под chat SaaS.  
+Вам нужен **operator cockpit for content** — значит композиция своя, runtime чужой не мешает.
+
+Cockpit ≠ CMS admin.  
+Cockpit = место, где человек и агент вместе ведут изменение мира.
+
+---
+
+## 12. IPC: stream как шина сообщений
+
+В OS процессы общаются через IPC.  
+У вас cockpit ↔ supervisor общаются через **UI message stream**.
+
+Это значит:
+
+- parts = message types шины;  
+- unknown part = forward-compatible IPC;  
+- versioning stream contract = ABI;  
+- ломать ABI без версии = segfault продукту.
+
+Поэтому «кастомим UI, не протокол» — не эстетика, а kernel hygiene.
+
+---
+
+## 13. Drivers и world model
+
+MCP server + CMS adapter ≈ device driver.  
+Entity types ≈ device classes.
+
+### Хороший driver
+
+- прячет внутренности CMS;  
+- говорит на доменном языке (`createDraft`, не «POST /api/v3/...`);  
+- отдаёт typed errors;  
+- поддерживает conflict/revision;  
+- не требует от модели знать SQL/API мусор.
+
+### World model
+
+OS должна знать объекты мира:
+
+`EntityType · EntityId · Revision · Locale · Asset`
+
+Без world model syscalls превращаются в кашу «создай что-нибудь где-нибудь».
+
+---
+
+## 14. Где метафора OS помогает — и где вредит
+
+### Помогает
+
+- разделить обязанности модулей;  
+- не путать chat history и content truth;  
+- требовать policy на границе write;  
+- растить через catalog/syscalls;  
+- объяснить команде, почему нужны runId/audit/budgets.
+
+### Вредит
+
+- если начать писать «настоящий kernel» год вместо продукта;  
+- если искать 1-в-1 аналоги Linux везде;  
+- если забыть, что LLM недетерминирован (это не CPU);  
+- если cockpit отложить «на потом».
+
+Честная формула 2026:
+
+**Берём словарь OS, реализуем supervisor + cockpit + governed syscalls, не претендуем на микроядро.**
+
+---
+
+## 15. Как растить Agentic Content OS без переписки
+
+| Хочу | Добавляю в OS | Не трогаю |
+|------|----------------|-----------|
+| Новый тип контента | entity type + tools + cards | stream runtime |
+| Новый шаг publish | gate + approval policy | chat primitives core |
+| Картинки как assets | storage + asset syscall | message protocol shape |
+| Лучше UX | cockpit composition | MCP contracts |
+| Другая CMS | новый driver | tool names/domain verbs |
+| Другая модель | model router | syscall/policy layer |
+
+Kernel-ish layer толстеет редко.  
+Syscall table и cockpit — часто.
+
+Это и есть OS-strategy vs chatbot-strategy.
+
+---
+
+## 16. Мини-манифест Content OS
+
+1. Человек задаёт intent в cockpit.  
+2. Supervisor создаёт run (process).  
+3. Memory/context manager собирает working set.  
+4. Model предлагает syscalls, не исполняет сама.  
+5. Policy решают: allow / deny / ask human.  
+6. MCP drivers меняют CMS world.  
+7. Verify читает world обратно.  
+8. Audit/telemetry записывают историю.  
+9. Evals учат OS не повторять ошибки.  
+10. Новые возможности = новые syscalls + cards, не новый чат.
+
+Если манифест выполняется — у вас Assistant/Agent OS.  
+Если нет — вернитесь к модулю, который проседает.
+
+---
+
+## 17. Семь контуров системы
 
 Когда всё начнёт расти, полезно видеть не фичи, а контуры.
 
@@ -168,7 +493,7 @@ Approvals, budgets, cancel, audit, evals.
 
 ---
 
-## 5. Главные объекты домена
+## 18. Главные объекты домена
 
 Договоритесь о словаре. Иначе через месяц «чат», «задача», «агент» и «пост» будут означать всё сразу.
 
@@ -189,7 +514,7 @@ Approvals, budgets, cancel, audit, evals.
 
 ---
 
-## 6. Инварианты (конституция)
+## 19. Инварианты (конституция)
 
 Их лучше нарушать осознанно, почти никогда.
 
@@ -209,7 +534,7 @@ Approvals, budgets, cancel, audit, evals.
 
 ---
 
-## 7. Как устроен мост UI ↔ агент
+## 20. Как устроен мост UI ↔ агент
 
 ```
 React (Assistant UI primitives)
@@ -241,7 +566,7 @@ React (Assistant UI primitives)
 
 ---
 
-## 8. UI на primitives: дисциплина сборки
+## 21. UI на primitives: дисциплина сборки
 
 Кастомный интерфейс — это pipeline:
 
@@ -275,7 +600,7 @@ CMS хранит правду.
 
 ---
 
-## 9. Много пользователей и много чатов
+## 22. Много пользователей и много чатов
 
 Вам **не нужны** shared-комнаты на несколько людей в одном треде. Нужны:
 
@@ -315,7 +640,7 @@ Memory на resource может помнить предпочтения межд
 
 ---
 
-## 10. Очереди: где да, где нет
+## 23. Очереди: где да, где нет
 
 Интерактивный чат **не надо** класть в BullMQ.
 
@@ -334,7 +659,7 @@ Queue — только для хрупкого/долгого фона.**
 
 ---
 
-## 11. MCP и контент на сайте
+## 24. MCP и контент на сайте
 
 Это делает продукт серьёзным: агент не только говорит, он меняет мир.
 
@@ -366,7 +691,7 @@ PR на красивую карточку без schema = тоже неполн�
 
 ---
 
-## 12. Картинки: multimodal first-class
+## 25. Картинки: multimodal first-class
 
 Раз в агента можно отправлять изображения, это не «бонус», а часть протокола.
 
@@ -410,7 +735,7 @@ State machine upload:
 
 ---
 
-## 13. Context engineering важнее «красивого промпта»
+## 26. Context engineering важнее «красивого промпта»
 
 Prompt engineering спрашивает: «как сформулировать?»  
 Context engineering спрашивает: **«что модель видит на этом шаге, в каком виде и зачем?»**
@@ -445,7 +770,7 @@ Context engineering спрашивает: **«что модель видит н�
 
 ---
 
-## 14. Reliability: агент = distributed system
+## 27. Reliability: агент = distributed system
 
 Как только есть MCP writes, вы в мире распределённых эффектов.
 
@@ -479,7 +804,7 @@ Context engineering спрашивает: **«что модель видит н�
 
 ---
 
-## 15. Human-in-the-loop
+## 28. Human-in-the-loop
 
 Канонический паттерн:
 
@@ -494,7 +819,7 @@ Approvals — это paused runs, не новые диалоги.
 
 ---
 
-## 16. Память
+## 29. Память
 
 Mastra-модель:
 
@@ -513,7 +838,7 @@ Mastra-модель:
 
 ---
 
-## 17. Observability и evals
+## 30. Observability и evals
 
 Без этого рост превращает продукт в фольклор («иногда норм, иногда нет»).
 
@@ -539,7 +864,7 @@ prod traces → failed cases → offline evals → ship → online monitors → 
 
 ---
 
-## 18. Стандарты вокруг, которые стоит знать
+## 31. Стандарты вокруг, которые стоит знать
 
 Не обязательно внедрять всё завтра. Стоит понимать карту.
 
@@ -563,7 +888,7 @@ prod traces → failed cases → offline evals → ship → online monitors → 
 
 ---
 
-## 19. Multi-agent: не торопиться
+## 32. Multi-agent: не торопиться
 
 Консенсус такой: topology важнее «ещё одной роли».
 
@@ -580,7 +905,7 @@ Multi-agent — когда упираетесь в context/роли/latency, а 
 
 ---
 
-## 20. Это всё будет расти
+## 33. Это всё будет расти
 
 Значит проектируем не точку, а траекторию.
 
@@ -639,7 +964,7 @@ approvals, context contract, catalog sync, eval smoke, budgets, attachment polic
 
 ---
 
-## 21. Что заложить заранее (дёшево сейчас, дорого потом)
+## 34. Что заложить заранее (дёшево сейчас, дорого потом)
 
 - `threadId` / `resourceId` / `runId` везде  
 - tool registry + fallback  
@@ -659,7 +984,7 @@ approvals, context contract, catalog sync, eval smoke, budgets, attachment polic
 
 ---
 
-## 22. Пакет документов, которого хватает команде
+## 35. Пакет документов, которого хватает команде
 
 Не wiki на 200 страниц. Шесть living docs:
 
@@ -674,7 +999,7 @@ approvals, context contract, catalog sync, eval smoke, budgets, attachment polic
 
 ---
 
-## 23. Definition of Done для новой возможности
+## 36. Definition of Done для новой возможности
 
 Фича «готова», если есть:
 
@@ -690,7 +1015,7 @@ approvals, context contract, catalog sync, eval smoke, budgets, attachment polic
 
 ---
 
-## 24. Антипаттерны, которые встречаются у всех
+## 37. Антипаттерны, которые встречаются у всех
 
 - рендерить только `content`  
 - новый tool без UI state machine  
@@ -707,7 +1032,7 @@ approvals, context contract, catalog sync, eval smoke, budgets, attachment polic
 
 ---
 
-## 25. Модель зрелости
+## 38. Модель зрелости
 
 ```
 L1  Chat works
@@ -727,44 +1052,48 @@ L10 Platformized catalogs + team rituals
 
 ---
 
-## 26. Одна страница «севера»
+## 39. Одна страница «севера»
 
 Если останется в голове совсем мало, пусть останется это:
 
 ### Что строим
 Не чат-виджет.  
-**Agentic Content OS** — OS-слой ассистента, который меняет контент сайта.
+**Agentic Content OS** = cockpit + supervisor + governed syscalls + world (CMS).
 
-### Стек
-Mastra = мозг  
-MCP = руки  
-Assistant UI primitives = лицо  
-AI SDK = нервная система стрима  
-CMS = мир  
+### OS одной строкой
+Model предлагает → policy решает → MCP меняет мир → cockpit показывает → audit помнит.
+
+### Стек как модули OS
+Mastra = supervisor/brain  
+MCP tools = syscalls  
+Assistant UI primitives = cockpit  
+AI SDK stream = IPC bus  
+CMS = world  
+Auth/approvals/budgets = access manager  
 
 ### Правда
 Чат хранит разговор.  
 Сайт хранит контент.  
-Run хранит факт действия.
+Run = process, хранит факт действия.
 
 ### Рост
-Каталоги и контракты.  
-Не особые случаи и не магия в компонентах.
+Новые syscalls + cards, не новый kernel.  
+Каталоги и контракты вместо особых случаев.
 
 ### UX loop
 Perceive → Orient → Propose → Approve? → Act → Verify → Remember
 
 ### Формула
-**События вместо голого текста.  
-Catalog вместо произвольного UI.  
-Pause/resume вместо нового turn.  
-Evals вместо ощущений.  
-State layers вместо каши.  
-Стабильные швы вместо героизма.**
+**Cockpit вместо пузырьков.  
+Syscalls вместо «просто tools».  
+Policy на границе write, не в промпте.  
+Context = RAM, CMS/files = disk.  
+Run = process.  
+События / catalogs / evals — ABI вашей OS.**
 
 ---
 
-## 27. Growth-ready MVP boundary: Must / Should / Later
+## 40. Growth-ready MVP boundary: Must / Should / Later
 
 Это практическая граница: что должно быть в фундаменте **до** волны роста, что можно чуть позже, что сознательно later.
 
@@ -815,7 +1144,7 @@ State layers вместо каши.
 
 ---
 
-## 28. Entity / CMS domain model
+## 41. Entity / CMS domain model
 
 Пока entity не названа, MCP — это «магические руки».  
 Назовите мир сайта.
@@ -879,7 +1208,7 @@ Preview читает **CMS/draft revision**, не invent из последнег
 
 ---
 
-## 29. Content-agent UX patterns
+## 42. Content-agent UX patterns
 
 Кастомные primitives имеют смысл, только если UX отражает content loop, а не generic chat.
 
@@ -940,7 +1269,7 @@ Preview читает **CMS/draft revision**, не invent из последнег
 
 ---
 
-## 30. Edit / regenerate / branch при side effects
+## 43. Edit / regenerate / branch при side effects
 
 Обычный chatbot предполагает: regenerate = просто другой текст.  
 У вас regenerate может означать **ещё один write в CMS**. Это другая физика.
@@ -984,7 +1313,7 @@ UI и агент говорят этими словами.
 
 ---
 
-## 31. Security для пишущего агента
+## 44. Security для пишущего агента
 
 Пишущий агент — это привилегированный пользователь с LLM в контуре. Угрозы другие.
 
@@ -1037,7 +1366,7 @@ UI и агент говорят этими словами.
 
 ---
 
-## 32. Cost & model routing
+## 45. Cost & model routing
 
 Рост usage убивает продукт тише, чем баги.
 
@@ -1083,7 +1412,7 @@ UI должен уметь сказать: «остановлено по лим�
 
 ---
 
-## 33. Quality gates before publish
+## 46. Quality gates before publish
 
 Publish — не кнопка, а ворота.
 
@@ -1123,7 +1452,7 @@ ValidationCard:
 
 ---
 
-## 34. Incident & rollback playbook
+## 47. Incident & rollback playbook
 
 Если агент пишет на сайт, инциденты будут. Готовьтесь текстом, не импровизацией.
 
@@ -1174,7 +1503,7 @@ ValidationCard:
 
 ---
 
-## 35. Human editor handoff
+## 48. Human editor handoff
 
 Не shared chat на много людей, а **передача работы человеку**.
 
@@ -1211,7 +1540,7 @@ ValidationCard:
 
 ---
 
-## 36. Testing strategy: не только «пощупать глазами»
+## 49. Testing strategy: не только «пощупать глазами»
 
 ### Пирамида для агентного продукта
 
@@ -1250,7 +1579,7 @@ PR меняет prompt/tool/schema/renderer → гоняет relevant suite.
 
 ---
 
-## 37. Retention, удаление, частные данные
+## 50. Retention, удаление, частные данные
 
 Рост = накопление мусора и рисков.
 
@@ -1289,7 +1618,7 @@ Chat delete ≠ automatic site unpublish, пока это не явное про
 
 ---
 
-## 38. Upgrade playbook: ai / mastra / assistant-ui
+## 51. Upgrade playbook: ai / mastra / assistant-ui
 
 Самый хрупкий контур — версии моста.
 
@@ -1326,7 +1655,7 @@ Chat delete ≠ automatic site unpublish, пока это не явное про
 
 ---
 
-## 39. Product analytics: что считать успехом
+## 52. Product analytics: что считать успехом
 
 Технические метрики нужны. Но продукт измеряется иначе.
 
@@ -1362,7 +1691,7 @@ Chat delete ≠ automatic site unpublish, пока это не явное про
 
 ---
 
-## 40. Когда покидать стек (exit criteria)
+## 53. Когда покидать стек (exit criteria)
 
 Дисциплина включает знание, когда *не* фанатеть.
 
@@ -1390,7 +1719,7 @@ Chat delete ≠ automatic site unpublish, пока это не явное про
 
 ---
 
-## 41. RFC-шаблоны
+## 54. RFC-шаблоны
 
 Ниже — заготовки. Копируйте в repo как `docs/rfc/`.
 
@@ -1478,7 +1807,7 @@ Severity if fails: block | warn
 
 ---
 
-## 42. Failure UX catalog
+## 55. Failure UX catalog
 
 Сделайте библиотеку состояний — иначе каждый экран импровизирует.
 
@@ -1500,7 +1829,7 @@ Severity if fails: block | warn
 
 ---
 
-## 43. Degraded modes
+## 56. Degraded modes
 
 Нормальные системы умеют работать «хуже», а не только «никак».
 
@@ -1518,7 +1847,7 @@ UI явно показывает mode badge.
 
 ---
 
-## 44. Team rituals at scale
+## 57. Team rituals at scale
 
 Когда вырастете хотя бы до нескольких людей:
 
@@ -1552,7 +1881,7 @@ UI явно показывает mode badge.
 
 ---
 
-## 45. Roadmap narrative (как рассказывать рост)
+## 58. Roadmap narrative (как рассказывать рост)
 
 Вместо хаотичного backlog — сюжет:
 
@@ -1568,7 +1897,7 @@ UI явно показывает mode badge.
 
 ---
 
-## 46. Сквозной сценарий «идеального» run
+## 59. Сквозной сценарий «идеального» run
 
 Соберите в голове один эталон — и сверяйте с ним дизайн.
 
@@ -1588,30 +1917,33 @@ UI явно показывает mode badge.
 
 ---
 
-## 47. Карта чтения (обновлённая)
+## 60. Карта чтения (обновлённая)
 
 ### Быстрые маршруты
 
-- Понять продукт целиком → **3 (Agent OS)**, 4–6, 26, 46  
-- Figma/UI голова → 8, 12, 29, 42  
-- Backend/agent → 11, 13, 14, 28, 31  
-- Рост и приоритеты → 20–22, 27, 45  
-- Операционка → 34, 38, 43, 44  
-- Качество → 17, 33, 36, 39  
-- Шаблоны в работу → 41  
+- **Agent / Content OS целиком → 3–16**, потом 39, 59  
+- Понять контуры/инварианты → 17–19  
+- Figma/UI / cockpit → 11, 21, 25, 42, 55  
+- Backend/syscalls/MCP → 7, 13, 24, 27, 41  
+- Память/context как RAM/disk → 8, 26, 29  
+- Рост OS без переписки → 15, 33–35, 40, 58  
+- Операционка → 47, 51, 56, 57  
+- Качество → 30, 46, 49, 52  
+- Шаблоны → 54  
 
 ### Если читать в самолёте блоками по 20–30 минут
 
-1. 1–8 (фундамент, **Agent OS**, UI)  
-2. 9–13 (users, MCP, images, context)  
-3. 14–19 (reliability, memory, standards)  
-4. 20–27 (рост и MVP boundary)  
-5. 28–34 (CMS, UX, security, incidents)  
-6. 35–46 (handoff, tests, ops, templates, эталон)
+1. **3–16 (вся тема Agent/Content OS)** ← начните отсюда, если летите ради этой идеи  
+2. 1–2 + 17–21 (фундамент стека и UI)  
+3. 22–26 (users, MCP, images, context)  
+4. 27–32 (reliability, HITL, standards)  
+5. 33–40 (рост и MVP boundary)  
+6. 41–48 (CMS, UX, security, incidents)  
+7. 49–59 (tests, ops, templates, эталон)
 
 ---
 
-## 48. Закрытие
+## 61. Закрытие
 
 Ваша ставка разумная: не прыгать на новый framework каждый месяц, а растить **Mastra + Assistant UI primitives** как тонкий **Agentic Content OS** с богатой продуктной поверхностью.
 
@@ -1635,11 +1967,11 @@ Tools станет больше.
 
 Север короткий:
 
-**События вместо голого текста.  
-Catalog вместо произвольного UI.  
-Pause/resume вместо нового turn.  
-Evals вместо ощущений.  
-Entity truth вместо каши в messages.  
-Стабильные швы вместо героизма.**
+**Это Content OS, не чат.  
+Cockpit + supervisor + syscalls + world.  
+Model предлагает, policy исполняет.  
+CMS — disk мира, context — RAM.  
+Run — process.  
+Растём каталогом syscalls, не переписью ядра.**
 
 Хорошего полёта.
