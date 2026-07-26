@@ -1,0 +1,86 @@
+Figma Release Notes — entries mentioning Variables/Collections/Modes/Tokens
+Source: https://www.figma.com/release-notes/
+
+Found total candidate entries: 61
+Filtered entries: 16
+
+- Date: 2025-12-11
+  Title: Disable Figma Templates in Buzz
+  Link: https://www.figma.com/release-notes/disable-figma-templates-in-buzz/
+  Excerpt: Learn how to disable Figma templates Admins on Organization and Enterprise plans can now disable âFrom Figmaâ Community templates in Buzz, ensuring teams use only the templates your brand team has published and approved. Learn more Use ChatGPT to generate presentations, social posts, invitations, digital ads, posters, and more. The Figma app is available to ChatGPT users on all plans. Support is coming soon for users in the EU. Visit the help center to learn more. Templates built with Variab…
+
+- Date: 2025-12-11
+  Title: Turn your ChatGPT conversations into Figma Slides presentations and Figma Buzz assets
+  Link: https://www.figma.com/release-notes/turn-your-chatgpt-brainstorms-into-figma-slides-presentations-and-figma-buzz-assets/
+  Excerpt: Use ChatGPT to generate presentations, social posts, invitations, digital ads, posters, and more. The Figma app is available to ChatGPT users on all plans. Support is coming soon for users in the EU. Visit the help center to learn more. Templates built with Variable modes now work seamlessly when published to Buzz. This gives your marketing teams more flexibility to toggle between your brand modes like colors, campaigns, markets, and more â all while staying on brand. When they open a template…
+
+- Date: 2025-12-11
+  Title: Publish Buzz Templates with Variable Modes
+  Link: https://www.figma.com/release-notes/publish-buzz-templates-with-variable-modes/
+  Excerpt: Learn how to set up configurable templates Templates built with Variable modes now work seamlessly when published to Buzz. This gives your marketing teams more flexibility to toggle between your brand modes like colors, campaigns, markets, and more â all while staying on brand. When they open a template published with variables, theyâll see a new Variable switcher in the menu to easily change modes. Learn more We launched 3 new AI image editing tools, all centralized in a contextual toolbar.…
+
+- Date: 2025-11-20
+  Title: Multi-brand scale with extended collections
+  Link: https://www.figma.com/release-notes/extended-collections/
+  Excerpt: A new way to manage and scale multi-brand design systems with extended collections and a new variables authoring experience. Extended collections â Design systems authors can extend their design system into an unlimited amount of modes. Extensions stay in sync with the core system, while still maintaining any overridden values. More improvements to variables: Import and export for variables âReuse your variables with easy import or export of variables as JSON files directly in Figma Design.
+
+- Date: 2025-11-19
+  Title: Build dynamic, content-rich websites with Figma Sites CMS, now in public beta
+  Link: https://www.figma.com/release-notes/figma-sites-cms-public-beta/
+  Excerpt: Designers can now create blogs, portfolios, and events pages featuring dynamic content that's easy to update. Designers can now create blogs, portfolios, and events pages featuring dynamic content that's easy to update. New features include: Add, edit, and publish content quickly without updating designs Connect lists and entire pages to CMS collections Get started quickly with pre-connected blocks Learn more about Figma Sites CMS in our help center
+
+- Date: 2025-09-17
+  Title: Enhanced Contrast Mode
+  Link: https://www.figma.com/release-notes/enhanced-contrast-mode/
+  Excerpt: New enhanced contrast toggle makes the Figma UI easier to read with higher contrast text, buttons, outlines, and selection, aligned with WCAG AA standards. Learn more about enhanced contrast. You can now select layers in Figma Design and make edits using written prompts. Use cases include: Bulk editing: Redesign multiple frames or layers at once Adding content: Insert or replace images and text Resizing: Quickly generate a mobile version
+
+- Date: 2025-09-16
+  Title: New alpha: Prompt to edit your designs
+  Link: https://www.figma.com/release-notes/new-alpha-prompt-to-edit-your-designs/
+  Excerpt: You can now select layers in Figma Design and make edits using written prompts. You can now select layers in Figma Design and make edits using written prompts. Use cases include: Bulk editing: Redesign multiple frames or layers at once Adding content: Insert or replace images and text Resizing: Quickly generate a mobile version Creating variations: Create a light mode and a dark mode Creating new UI: Generate a new card component from scratch
+
+- Date: 2025-09-15
+  Title:  Snap to midpoint for variable width stroke
+  Link: https://www.figma.com/release-notes/snap-to-midpoint-in-variable-width-strokes/
+  Excerpt: When you hover with the width point tool, it will now hint at the segment midpoint. Weâre making it easier to find and snap to midpoints while using variable width strokes in Figma Draw. When you hover with the width point tool, itâll now hint at the midpoint of that segment so you can snap to the middle of two points (or even between two points themselves). Not into snapping? Hold Control while dragging width points along a path, or head to Preferences to turn it off. Learn more . Weâve a…
+
+- Date: 2025-08-14
+  Title: More ways to edit images with AI
+  Link: https://www.figma.com/release-notes/edit-images-with-ai/
+  Excerpt: Weâve made the following updates to our AI-powered image editing features... Weâve made the following updates to our AI-powered image editing features: Remove background or Boost resolution for multiple images â You can now edit up to 25 images at once for faster, more efficient editing. Gemini 2.0 Flash in âEdit imageâ â Choose between Gemini 2.0 Flash and GPT Image 1 to get results that best match your prompt. If a variable or style name gets cut off in the picker, you can now hove…
+
+- Date: 2025-08-07
+  Title: Hover to see full names of shortened variables and styles
+  Link: https://www.figma.com/release-notes/hover-to-see-full-names-of-shortened-variables-and-styles/
+  Excerpt: If a variable or style name gets cut off in the picker, you can now hover over it to see the full name. We have added a new brush type to our custom brush offering in Figma Draw: scatter brushes. You can use 10 new scatter brushes to add dimensions to your illustrations by creating a shadow or stippling effect. Learn more . Figma Draw Simplify vector
+
+- Date: 2025-07-29
+  Title: Variable Width Stroke updates
+  Link: https://www.figma.com/release-notes/variable-width-stroke-updates/
+  Excerpt: Variable Width Stroke updates Direct edit width input - for more precise work, now you can select a width point and double click to enter a numerical value Keyboard tabbing control - after selecting a width point, tab to go to the next one or SHIFT + TAB to go to the previous width point Custom width profile previews - with a custom width profile, you can see a preview of the shape or edit the width profile from the menu.
+
+- Date: 2025-07-23
+  Title: New updates in Figma Make
+  Link: https://www.figma.com/release-notes/new-updates-figma-make/
+  Excerpt: Weâve introduced a few updates to Figma Make to make editing, previewing, and iterating even smoother. Mobile preview - Preview your Make across screen sizes using a new device dropdown menu and custom dimension editorâno need to resize your browser manually. Version naming and code edit history - Make now saves named versions and tracks every code edit, so you can quickly review changes and restore to an earlier state at any time. Variable filter and search: Search and filter capabilities t…
+
+- Date: 2025-07-22
+  Title: New variable filtering and edge-to-edge modal
+  Link: https://www.figma.com/release-notes/file-export-controls/
+  Excerpt: Smarter variable filtering, searching, and a larger, edge-to-edge modal make it faster and easier to manage variables, especially for complex design systems. Variable filter and search: Search and filter capabilities to make finding variables faster and easier. Edge-to-edge modal: The new modal now opens edge-to-edge across the canvas for better visibility into all variables. Organization admins at companies using Governance+ for Figma Enterprise can now prevent users with view-only access from…
+
+- Date: 2025-07-01
+  Title: Dev Mode MCP Server Updates: Annotations and Code Connect Snippets
+  Link: https://www.figma.com/release-notes/variable-width-strokes/
+  Excerpt: The Dev Mode MCP server now supports even more ways to pass design context to your agentic coding tools for better code generation. We recently updated the get_code tool in our MCP server to support the following: Annotations - Add instructions, style considerations, accessibility info, and more to ensure that generated code is built to your specifications. Code Connect Snippets
+
+- Date: 2025-06-26
+  Title: Variable width strokes
+  Link: https://www.figma.com/release-notes/variable-width-strokes/
+  Excerpt: You can now adjust the width of your stroke at any given point along a path with the new variable width stroke vector editing tool. You can now adjust the width of your stroke at any given point along a path with the new variable width stroke vector editing tool. Available in Figma Draw and Figma Design. Learn more in this help center article. Variable width stroke also makes it possible for users to draw with pressure sensitivity on tablets. Figma will set the stroke width to reflect the amount…
+
+- Date: unknown
+  Title: Everything we covered at Schema by Figma
+  Link: https://www.figma.com/release-notes/everything-we-covered-at-schema-by-figma/
+  Excerpt: We announced new design systems features that drive consistency across design, code, and more. Nimble by design Extended collections â Manage and scale multi-brand design systems. Rolling out in November. Learn more here. Slots
+
